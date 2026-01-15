@@ -1,8 +1,5 @@
 import streamlit as st
 import time
-import plotly.graph_objects as go
-from datetime import datetime
-import pandas as pd
 
 # Configuration de la page
 st.set_page_config(
@@ -28,12 +25,73 @@ st.markdown("""
         font-size: 1.2em;
         margin-bottom: 2em;
     }
+    .network-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 40px 20px;
+        background: linear-gradient(to bottom, #f8f9ff 0%, #e8eeff 100%);
+        border-radius: 15px;
+        margin: 20px 0;
+        min-height: 300px;
+        position: relative;
+    }
+    .node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        z-index: 2;
+        transition: all 0.3s;
+    }
+    .node-icon {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 40px;
+        background: white;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        margin-bottom: 10px;
+    }
+    .node-icon.active {
+        animation: pulse 1s infinite;
+        box-shadow: 0 5px 25px rgba(102, 126, 234, 0.5);
+    }
+    @keyframes pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.1); }
+    }
+    .node-label {
+        font-weight: bold;
+        color: #333;
+        text-align: center;
+        font-size: 14px;
+    }
+    .packet {
+        position: absolute;
+        font-size: 40px;
+        animation: move 2s ease-in-out;
+        z-index: 10;
+    }
     .step-card {
         padding: 20px;
         border-radius: 10px;
         border-left: 5px solid #667eea;
         background-color: #f8f9ff;
         margin: 10px 0;
+        animation: slideIn 0.5s;
+    }
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateX(-20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
     }
     .security-badge {
         background-color: #4caf50;
@@ -42,13 +100,48 @@ st.markdown("""
         border-radius: 15px;
         font-size: 0.9em;
         font-weight: bold;
+        display: inline-block;
+        margin-left: 10px;
     }
     .metric-card {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 20px;
-        border-radius: 10px;
+        padding: 30px;
+        border-radius: 15px;
         color: white;
         text-align: center;
+    }
+    .metric-value {
+        font-size: 2.5em;
+        font-weight: bold;
+        margin-bottom: 10px;
+    }
+    .metric-label {
+        font-size: 1em;
+        opacity: 0.9;
+    }
+    .connection-line {
+        position: absolute;
+        height: 3px;
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        top: 50%;
+        left: 0;
+        right: 0;
+        opacity: 0.3;
+        z-index: 1;
+    }
+    .info-box {
+        background: #fff3cd;
+        border-left: 4px solid #ffc107;
+        padding: 15px;
+        border-radius: 5px;
+        margin: 10px 0;
+    }
+    .success-box {
+        background: #d4edda;
+        border-left: 4px solid #28a745;
+        padding: 15px;
+        border-radius: 5px;
+        margin: 10px 0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -66,28 +159,30 @@ if 'total_time' not in st.session_state:
     st.session_state.total_time = 0
 if 'security_checks' not in st.session_state:
     st.session_state.security_checks = 0
+if 'packet_position' not in st.session_state:
+    st.session_state.packet_position = 0
 
 # Définition des nœuds du réseau
 nodes = [
-    {"id": "pc", "icon": "💻", "label": "Votre PC", "x": 0, "y": 2},
-    {"id": "firewall1", "icon": "🛡️", "label": "Pare-feu Local", "x": 1, "y": 2},
-    {"id": "router", "icon": "📡", "label": "Routeur/FAI", "x": 2, "y": 2},
-    {"id": "internet", "icon": "☁️", "label": "Internet", "x": 3, "y": 2},
-    {"id": "firewall2", "icon": "🛡️", "label": "Pare-feu Serveur", "x": 4, "y": 2},
-    {"id": "server", "icon": "🖥️", "label": "Serveur", "x": 5, "y": 2}
+    {"id": "pc", "icon": "💻", "label": "Votre PC"},
+    {"id": "firewall1", "icon": "🛡️", "label": "Pare-feu Local"},
+    {"id": "router", "icon": "📡", "label": "Routeur/FAI"},
+    {"id": "internet", "icon": "☁️", "label": "Internet"},
+    {"id": "firewall2", "icon": "🛡️", "label": "Pare-feu Serveur"},
+    {"id": "server", "icon": "🖥️", "label": "Serveur"}
 ]
 
 # Définition des étapes
 steps = [
     {"node": 0, "title": "🔵 Initialisation", "desc": "Le navigateur crée une requête HTTP/HTTPS", "security": False},
-    {"node": 0, "title": "🔍 Résolution DNS", "desc": "Conversion du nom de domaine en adresse IP", "security": False},
-    {"node": 0, "title": "🔒 Chiffrement TLS", "desc": "Le paquet est chiffré avec SSL/TLS", "security": True},
-    {"node": 1, "title": "🛡️ Pare-feu sortant", "desc": "Vérification que la connexion est autorisée", "security": True},
-    {"node": 2, "title": "📡 Routage", "desc": "Le routeur envoie le paquet vers Internet", "security": False},
-    {"node": 3, "title": "☁️ Transit Internet", "desc": "Passage par plusieurs routeurs intermédiaires", "security": False},
-    {"node": 4, "title": "🛡️ Pare-feu entrant", "desc": "Le serveur vérifie la légitimité du paquet", "security": True},
+    {"node": 0, "title": "🔍 Résolution DNS", "desc": "Conversion du nom de domaine en adresse IP (ex: google.com → 142.250.185.46)", "security": False},
+    {"node": 0, "title": "🔒 Chiffrement TLS", "desc": "Le paquet est chiffré avec SSL/TLS pour protéger vos données", "security": True},
+    {"node": 1, "title": "🛡️ Pare-feu sortant", "desc": "Vérification que la connexion est autorisée à quitter votre réseau", "security": True},
+    {"node": 2, "title": "📡 Routage", "desc": "Le routeur envoie le paquet vers Internet via votre FAI", "security": False},
+    {"node": 3, "title": "☁️ Transit Internet", "desc": "Passage par plusieurs routeurs intermédiaires (10-15 sauts en moyenne)", "security": False},
+    {"node": 4, "title": "🛡️ Pare-feu entrant", "desc": "Le serveur vérifie la légitimité du paquet et bloque les menaces", "security": True},
     {"node": 5, "title": "📥 Réception", "desc": "Le serveur déchiffre et traite la requête", "security": False},
-    {"node": 5, "title": "✅ Réponse", "desc": "Le serveur envoie les données demandées", "security": False}
+    {"node": 5, "title": "✅ Réponse", "desc": "Le serveur envoie les données demandées (page web, API, etc.)", "security": False}
 ]
 
 # Sidebar - Contrôles
@@ -104,7 +199,7 @@ with st.sidebar:
     
     col1, col2 = st.columns(2)
     with col1:
-        start_btn = st.button("🚀 Démarrer", use_container_width=True, type="primary")
+        start_btn = st.button("🚀 Démarrer", use_container_width=True, type="primary", disabled=st.session_state.animation_running)
     with col2:
         reset_btn = st.button("🔄 Reset", use_container_width=True)
     
@@ -112,97 +207,40 @@ with st.sidebar:
     
     # Informations techniques
     st.header("📊 Informations")
-    st.info("""
-    **Ce que vous allez voir :**
-    - 🔐 Chiffrement TLS/SSL
-    - 🛡️ Pare-feu (entrée/sortie)
-    - 📡 Routage réseau
-    - ☁️ Transit Internet
-    - ✅ Vérifications sécurité
-    """)
+    
+    with st.expander("🔐 Qu'est-ce que TLS/SSL ?", expanded=False):
+        st.write("""
+        **TLS (Transport Layer Security)** chiffre vos données pour que personne ne puisse les lire pendant le transit.
+        
+        - 🔒 Chiffrement de bout en bout
+        - 🔑 Échange de clés sécurisé
+        - ✅ Authentification du serveur
+        """)
+    
+    with st.expander("🛡️ Rôle des pare-feu", expanded=False):
+        st.write("""
+        Les **pare-feu** filtrent le trafic réseau :
+        
+        - ⛔ Bloquent les connexions suspectes
+        - ✅ Autorisent le trafic légitime
+        - 📊 Analysent les paquets en temps réel
+        """)
+    
+    with st.expander("📡 Qu'est-ce qu'un routeur ?", expanded=False):
+        st.write("""
+        Le **routeur** dirige vos paquets :
+        
+        - 🗺️ Trouve le meilleur chemin
+        - 🔄 Transmet entre réseaux
+        - 📍 Utilise des tables de routage
+        """)
+    
+    st.divider()
     
     if protocol == "HTTP (Non sécurisé)":
-        st.warning("⚠️ HTTP n'est pas sécurisé ! Vos données peuvent être interceptées.")
+        st.warning("⚠️ **HTTP n'est pas sécurisé !**\n\nVos données peuvent être interceptées en clair.")
     else:
-        st.success("✅ HTTPS est sécurisé avec chiffrement TLS.")
-
-# Fonction pour créer le graphique du réseau
-def create_network_graph(current_step, packet_position):
-    fig = go.Figure()
-    
-    # Ajouter les connexions (lignes)
-    for i in range(len(nodes) - 1):
-        fig.add_trace(go.Scatter(
-            x=[nodes[i]["x"], nodes[i+1]["x"]],
-            y=[nodes[i]["y"], nodes[i+1]["y"]],
-            mode='lines',
-            line=dict(color='rgba(102, 126, 234, 0.3)', width=3),
-            hoverinfo='none',
-            showlegend=False
-        ))
-    
-    # Ajouter les nœuds
-    node_x = [node["x"] for node in nodes]
-    node_y = [node["y"] for node in nodes]
-    node_text = [f"{node['icon']}<br>{node['label']}" for node in nodes]
-    
-    fig.add_trace(go.Scatter(
-        x=node_x,
-        y=node_y,
-        mode='markers+text',
-        marker=dict(
-            size=60,
-            color='white',
-            line=dict(color='#667eea', width=3)
-        ),
-        text=[node["icon"] for node in nodes],
-        textfont=dict(size=30),
-        textposition="middle center",
-        hovertext=node_text,
-        hoverinfo='text',
-        showlegend=False
-    ))
-    
-    # Ajouter les labels des nœuds
-    fig.add_trace(go.Scatter(
-        x=node_x,
-        y=[y - 0.3 for y in node_y],
-        mode='text',
-        text=[node["label"] for node in nodes],
-        textfont=dict(size=12, color='#333'),
-        hoverinfo='none',
-        showlegend=False
-    ))
-    
-    # Ajouter le paquet en mouvement
-    if packet_position is not None:
-        packet_icon = "🔒" if current_step >= 2 else "📦"
-        fig.add_trace(go.Scatter(
-            x=[packet_position[0]],
-            y=[packet_position[1]],
-            mode='markers+text',
-            marker=dict(size=40, color='#f5576c'),
-            text=packet_icon,
-            textfont=dict(size=25),
-            textposition="middle center",
-            hovertext="Paquet réseau",
-            hoverinfo='text',
-            showlegend=False
-        ))
-    
-    # Configuration du layout
-    fig.update_layout(
-        height=400,
-        showlegend=False,
-        hovermode='closest',
-        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-0.5, 5.5]),
-        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[0.5, 3.5]),
-        plot_bgcolor='rgba(248, 249, 255, 0.5)',
-        paper_bgcolor='white',
-        margin=dict(t=20, b=20, l=20, r=20)
-    )
-    
-    return fig
+        st.success("✅ **HTTPS est sécurisé**\n\nChiffrement TLS actif")
 
 # Réinitialisation
 if reset_btn:
@@ -210,26 +248,69 @@ if reset_btn:
     st.session_state.current_step = 0
     st.session_state.total_time = 0
     st.session_state.security_checks = 0
+    st.session_state.packet_position = 0
     st.rerun()
 
 # Affichage des métriques
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.metric("⏱️ Temps écoulé", f"{st.session_state.total_time:.1f}s")
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-value">{st.session_state.total_time:.1f}s</div>
+        <div class="metric-label">⏱️ Temps écoulé</div>
+    </div>
+    """, unsafe_allow_html=True)
 
 with col2:
-    hop_count = len(set([step["node"] for step in steps[:st.session_state.current_step + 1]])) - 1
-    st.metric("🔄 Nombre de sauts", hop_count)
+    hop_count = len(set([step["node"] for step in steps[:st.session_state.current_step + 1]])) - 1 if st.session_state.current_step > 0 else 0
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-value">{hop_count}</div>
+        <div class="metric-label">🔄 Nombre de sauts</div>
+    </div>
+    """, unsafe_allow_html=True)
 
 with col3:
-    st.metric("🛡️ Vérifications sécurité", st.session_state.security_checks)
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-value">{st.session_state.security_checks}</div>
+        <div class="metric-label">🛡️ Vérifications sécurité</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-# Zone principale - Graphique du réseau
+st.markdown("<br>", unsafe_allow_html=True)
+
+# Zone principale - Visualisation du réseau
 st.subheader("🗺️ Trajet du paquet réseau")
 
-graph_placeholder = st.empty()
+network_placeholder = st.empty()
 status_placeholder = st.empty()
+
+# Fonction pour afficher le réseau
+def display_network(current_node_idx, packet_icon="📦"):
+    nodes_html = ""
+    for i, node in enumerate(nodes):
+        active_class = "active" if i == current_node_idx else ""
+        nodes_html += f"""
+        <div class="node">
+            <div class="node-icon {active_class}">{node['icon']}</div>
+            <div class="node-label">{node['label']}</div>
+        </div>
+        """
+    
+    packet_html = ""
+    if current_node_idx >= 0:
+        packet_position = (100 / (len(nodes) - 1)) * current_node_idx
+        packet_html = f'<div class="packet" style="left: {packet_position}%;">{packet_icon}</div>'
+    
+    return f"""
+    <div class="network-container">
+        <div class="connection-line"></div>
+        {nodes_html}
+        {packet_html}
+    </div>
+    """
 
 # Animation
 if start_btn and not st.session_state.animation_running:
@@ -237,6 +318,7 @@ if start_btn and not st.session_state.animation_running:
     st.session_state.current_step = 0
     st.session_state.total_time = 0
     st.session_state.security_checks = 0
+    st.session_state.packet_position = 0
     
     start_time = time.time()
     
@@ -245,28 +327,11 @@ if start_btn and not st.session_state.animation_running:
         current_step_data = steps[step_idx]
         current_node_idx = current_step_data["node"]
         
-        # Calculer la position du paquet
-        if step_idx == 0:
-            packet_pos = (nodes[0]["x"], nodes[0]["y"])
-        else:
-            prev_node_idx = steps[step_idx - 1]["node"]
-            if current_node_idx != prev_node_idx:
-                # Animation du mouvement
-                for progress in range(0, 101, 10):
-                    t = progress / 100
-                    x = nodes[prev_node_idx]["x"] + (nodes[current_node_idx]["x"] - nodes[prev_node_idx]["x"]) * t
-                    y = nodes[prev_node_idx]["y"] + (nodes[current_node_idx]["y"] - nodes[prev_node_idx]["y"]) * t
-                    packet_pos = (x, y)
-                    
-                    fig = create_network_graph(step_idx, packet_pos)
-                    graph_placeholder.plotly_chart(fig, use_container_width=True, key=f"graph_{step_idx}_{progress}")
-                    time.sleep(animation_speed / 20)
-            else:
-                packet_pos = (nodes[current_node_idx]["x"], nodes[current_node_idx]["y"])
+        # Déterminer l'icône du paquet
+        packet_icon = "🔒" if step_idx >= 2 else "📦"
         
-        # Afficher le graphique
-        fig = create_network_graph(step_idx, packet_pos)
-        graph_placeholder.plotly_chart(fig, use_container_width=True, key=f"graph_final_{step_idx}")
+        # Afficher le réseau
+        network_placeholder.markdown(display_network(current_node_idx, packet_icon), unsafe_allow_html=True)
         
         # Afficher le statut actuel
         security_badge = '<span class="security-badge">🔒 Sécurisé</span>' if current_step_data["security"] else ''
@@ -285,23 +350,36 @@ if start_btn and not st.session_state.animation_running:
         st.session_state.total_time = time.time() - start_time
         
         time.sleep(animation_speed)
+        st.rerun()
     
     # Animation terminée
-    status_placeholder.success("✅ Paquet transmis avec succès ! Toutes les vérifications de sécurité sont passées.")
+    status_placeholder.markdown("""
+    <div class="success-box">
+        <h3>✅ Transmission réussie !</h3>
+        <p>Le paquet a été transmis avec succès. Toutes les vérifications de sécurité sont passées.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
     st.balloons()
     st.session_state.animation_running = False
 
 else:
     # Affichage statique initial
-    fig = create_network_graph(st.session_state.current_step, None)
-    graph_placeholder.plotly_chart(fig, use_container_width=True)
+    current_node = steps[st.session_state.current_step]["node"] if st.session_state.current_step < len(steps) else 0
+    packet_icon = "🔒" if st.session_state.current_step >= 2 else "📦"
+    network_placeholder.markdown(display_network(current_node, packet_icon), unsafe_allow_html=True)
     
-    if st.session_state.current_step == 0:
-        status_placeholder.info("👆 Cliquez sur '🚀 Démarrer' dans la barre latérale pour lancer la simulation")
+    if st.session_state.current_step == 0 and not st.session_state.animation_running:
+        status_placeholder.markdown("""
+        <div class="info-box">
+            <h3>👆 Prêt à démarrer</h3>
+            <p>Cliquez sur <strong>'🚀 Démarrer'</strong> dans la barre latérale pour lancer la simulation</p>
+        </div>
+        """, unsafe_allow_html=True)
 
 # Section d'information
 st.divider()
-st.subheader("📋 Détails des étapes de transmission")
+st.subheader("📋 Toutes les étapes de transmission")
 
 cols = st.columns(3)
 for idx, step in enumerate(steps):
@@ -311,13 +389,16 @@ for idx, step in enumerate(steps):
         with st.expander(f"{security_indicator} {step['title']}", expanded=False):
             st.write(step["desc"])
             if step["security"]:
-                st.success("Cette étape inclut des mesures de sécurité")
+                st.success("✅ Cette étape inclut des mesures de sécurité")
+            else:
+                st.info("ℹ️ Étape de transmission standard")
 
 # Footer
 st.divider()
 st.markdown("""
 <div style='text-align: center; color: #666; padding: 20px;'>
-    <p>💡 <strong>Projet réalisé pour vulgariser la communication réseau sécurisée</strong></p>
-    <p>Technologies : Python • Streamlit • Plotly • Cybersécurité</p>
+    <p>💡 <strong>Projet éducatif pour comprendre la communication réseau sécurisée</strong></p>
+    <p><strong>Technologies :</strong> Python • Streamlit • Cybersécurité • Réseaux</p>
+    <p><strong>Objectif :</strong> Vulgariser les concepts de sécurité réseau de manière interactive</p>
 </div>
 """, unsafe_allow_html=True)
