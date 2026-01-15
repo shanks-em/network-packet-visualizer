@@ -1,18 +1,1 @@
-streamlit==1.31.0
-plotly==5.18.0
-pandas==2.1.4
-```
-
-### **2. Assurez-vous que le fichier s'appelle bien `requirements.txt`**
-- Pas `requirements.text`
-- Pas `Requirement.txt`
-- Exactement : `requirements.txt`
-
-### **3. Vérifiez la structure de votre repository GitHub**
-
-Elle doit ressembler à ça :
-```
-network-packet-visualizer/
-├── app.py              (ou index.py - le nom que vous avez utilisé)
-├── requirements.txt    (à la racine !)
-└── README.md
+streamlit
